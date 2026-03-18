@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import logger from './logger.js';
+import db from './db/knex.js';
 import authRoutes from './routes/auth.js';
 import expenseRoutes from './routes/expenses.js';
 import categoryRoutes from './routes/categories.js';
@@ -40,8 +41,22 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
-  logger.info(`Server running on http://localhost:${PORT}`);
-});
+async function start() {
+  try {
+    await db.migrate.latest();
+    logger.info('Database migrations applied');
+    await db.seed.run();
+    logger.info('Database seeds applied');
+  } catch (err) {
+    logger.error({ err }, 'Failed to initialize database');
+    process.exit(1);
+  }
+
+  app.listen(PORT, () => {
+    logger.info(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+start();
 
 export default app;
