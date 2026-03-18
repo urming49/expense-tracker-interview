@@ -1,6 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Expense } from '../types';
 import { CategoryIcon } from './CategoryIcon';
+import { safeNum } from '../utils/numbers';
 
 interface ExpenseListProps {
   expenses: Expense[];
@@ -36,7 +37,7 @@ export function ExpenseList({ expenses, onEdit, onDelete }: ExpenseListProps) {
               </div>
               <div className="flex items-center space-x-4">
                 <span className="text-sm font-semibold text-gray-900">
-                  ${expense.amount.toFixed(2)}
+                  ${safeNum(expense.amount).toFixed(2)}
                 </span>
                 <div className="flex space-x-2">
                   <button

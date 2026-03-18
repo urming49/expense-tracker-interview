@@ -9,18 +9,31 @@ const router = Router();
 
 type AuthRequest = Request & { user: JwtPayload };
 
+const validAmount = z
+  .number({ invalid_type_error: 'Amount must be a number' })
+  .finite('Amount must be a finite number')
+  .positive('Amount must be greater than 0');
+
+const validDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+  .refine((d) => {
+    const parsed = new Date(d);
+    return !isNaN(parsed.getTime()) && parsed.toISOString().startsWith(d);
+  }, 'Date must be a valid calendar date');
+
 const createExpenseSchema = z.object({
   categoryId: z.number().int().positive(),
-  amount: z.number().positive(),
-  description: z.string().min(1).max(255),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amount: validAmount,
+  description: z.string().min(1, 'Description is required').max(255),
+  date: validDate,
 });
 
 const updateExpenseSchema = z.object({
   categoryId: z.number().int().positive().optional(),
-  amount: z.number().positive().optional(),
-  description: z.string().min(1).max(255).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  amount: validAmount.optional(),
+  description: z.string().min(1, 'Description is required').max(255).optional(),
+  date: validDate.optional(),
 });
 
 router.use(authenticateToken);

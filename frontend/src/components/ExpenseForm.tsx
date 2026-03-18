@@ -2,6 +2,19 @@ import { useState, useEffect } from 'react';
 import { useCategories } from '../hooks/useCategories';
 import type { CreateExpenseData, Expense } from '../types';
 
+/**
+ * Props for the ExpenseForm component.
+ *
+ * @property onSubmit   - Called with validated form data when the user submits.
+ *                        Receives a `CreateExpenseData` object with all fields parsed
+ *                        and ready to send to the API.
+ * @property onCancel   - Called when the user clicks the Cancel button.
+ * @property initialData - Optional existing expense. When provided the form
+ *                         switches to edit mode: fields are pre-filled and the
+ *                         submit button reads "Update" instead of "Create".
+ * @property isLoading  - When true the submit button is disabled and shows
+ *                        "Saving..." to prevent duplicate submissions.
+ */
 interface ExpenseFormProps {
   onSubmit: (data: CreateExpenseData) => void;
   onCancel: () => void;
@@ -9,11 +22,69 @@ interface ExpenseFormProps {
   isLoading?: boolean;
 }
 
+/**
+ * ExpenseForm
+ *
+ * A controlled form for creating or editing an expense record.
+ * Handles its own field state, client-side validation, and error display.
+ *
+ * ## Fields
+ * | Field       | Input type | Required | Validation                                      |
+ * |-------------|------------|----------|-------------------------------------------------|
+ * | Category    | `<select>` | yes      | Must be a valid category id from the API        |
+ * | Amount      | `number`   | yes      | Finite positive number (> 0), no Infinity / NaN |
+ * | Description | `text`     | yes      | Non-empty, non-whitespace string                |
+ * | Date        | `date`     | yes      | YYYY-MM-DD, must be a real calendar date        |
+ *
+ * ## State design
+ * Amount is stored as a raw string (`amountRaw`) rather than a number so that
+ * an empty input stays empty. Converting to `Number()` eagerly would turn `''`
+ * into `0`, making the "required" check impossible to trigger. The conversion
+ * happens only inside `validate()` and `handleSubmit()`, after the empty check
+ * has already passed.
+ *
+ * ## Validation rules
+ * - Amount
+ *   - Empty string → "Amount is required"
+ *   - `NaN` or `Infinity` → "Amount must be a finite number"
+ *   - `<= 0` → "Amount must be greater than 0"
+ * - Description
+ *   - Empty or whitespace-only → "Description is required"
+ * - Date
+ *   - Empty → "Date is required"
+ *   - Does not match `YYYY-MM-DD` → "Date must be in YYYY-MM-DD format"
+ *   - Impossible calendar date (e.g. Feb 30) → "Date must be a valid calendar date"
+ *     (detected via `new Date()` round-trip check)
+ *
+ * All errors are evaluated on every submit attempt and displayed simultaneously
+ * beneath their respective inputs.
+ *
+ * @example — create mode
+ * ```tsx
+ * <ExpenseForm
+ *   onSubmit={(data) => createExpense(data)}
+ *   onCancel={() => setOpen(false)}
+ * />
+ * ```
+ *
+ * @example — edit mode
+ * ```tsx
+ * <ExpenseForm
+ *   initialData={expense}
+ *   onSubmit={(data) => updateExpense(expense.id, data)}
+ *   onCancel={() => setOpen(false)}
+ *   isLoading={isPending}
+ * />
+ * ```
+ */
+
 export function ExpenseForm({ onSubmit, onCancel, initialData, isLoading }: ExpenseFormProps) {
   const { data: categories } = useCategories();
-  const [formData, setFormData] = useState<CreateExpenseData>({
+  const [amountRaw, setAmountRaw] = useState<string>(
+    initialData?.amount != null ? String(initialData.amount) : ''
+  );
+  const [formData, setFormData] = useState<Omit<CreateExpenseData, 'amount'>>({
     categoryId: initialData?.categoryId || 1,
-    amount: initialData?.amount || 0,
     description: initialData?.description || '',
     date: initialData?.date || new Date().toISOString().split('T')[0],
   });
@@ -21,9 +92,9 @@ export function ExpenseForm({ onSubmit, onCancel, initialData, isLoading }: Expe
 
   useEffect(() => {
     if (initialData) {
+      setAmountRaw(String(initialData.amount));
       setFormData({
         categoryId: initialData.categoryId,
-        amount: initialData.amount,
         description: initialData.description,
         date: initialData.date,
       });
@@ -33,14 +104,30 @@ export function ExpenseForm({ onSubmit, onCancel, initialData, isLoading }: Expe
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.amount || formData.amount <= 0) {
-      newErrors.amount = 'Amount must be greater than 0';
+    if (amountRaw.trim() === '') {
+      newErrors.amount = 'Amount is required';
+    } else {
+      const amount = Number(amountRaw);
+      if (isNaN(amount) || !isFinite(amount)) {
+        newErrors.amount = 'Amount must be a finite number';
+      } else if (amount <= 0) {
+        newErrors.amount = 'Amount must be greater than 0';
+      }
     }
+
     if (!formData.description.trim()) {
       newErrors.description = 'Description is required';
     }
+
     if (!formData.date) {
       newErrors.date = 'Date is required';
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(formData.date)) {
+      newErrors.date = 'Date must be in YYYY-MM-DD format';
+    } else {
+      const parsed = new Date(formData.date);
+      if (isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(formData.date)) {
+        newErrors.date = 'Date must be a valid calendar date';
+      }
     }
 
     setErrors(newErrors);
@@ -50,7 +137,7 @@ export function ExpenseForm({ onSubmit, onCancel, initialData, isLoading }: Expe
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validate()) {
-      onSubmit(formData);
+      onSubmit({ ...formData, amount: Number(amountRaw) });
     }
   };
 
@@ -82,8 +169,8 @@ export function ExpenseForm({ onSubmit, onCancel, initialData, isLoading }: Expe
           type="number"
           id="amount"
           step="0.01"
-          value={formData.amount || ''}
-          onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
+          value={amountRaw}
+          onChange={(e) => setAmountRaw(e.target.value)}
           className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm border p-2 ${
             errors.amount ? 'border-red-500' : 'border-gray-300'
           } focus:border-indigo-500 focus:ring-indigo-500`}
